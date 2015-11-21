@@ -43,8 +43,11 @@ void HungarianLossLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     num_gt_.push_back(0);
     for (int i = 0; i < bottom[2]->height(); ++i) {
       Dtype box_score = (*(box_flags_data + bottom[2]->offset(n, 0, i)));
-      CHECK_NEAR(static_cast<int>(box_score), box_score, 0.01);
-      num_gt_[n] += static_cast<int>(box_score);
+      int box_score_int = static_cast<int>(box_score);
+      CHECK_NEAR(box_score_int, box_score, 0.01);
+      if (box_score_int > 0) {
+        num_gt_[n] += 1;
+      }
     }
     const int channels = bottom[0]->channels();
     CHECK_EQ(channels, 4);
@@ -145,12 +148,16 @@ void HungarianLossLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     }
     assignments_.push_back(assignment);
 
+    Dtype* top_assignments = top[2]->mutable_cpu_data();
     for (int i = 0; i < num_pred; ++i) {
-      top_confidences[n * num_pred + i] =
-          assignment[i] < num_gt_[n] ? Dtype(1) : Dtype(0);
-      Dtype* top_assignments = top[2]->mutable_cpu_data();
-      top_assignments[n * num_pred + i] =
-          assignment[i] < num_gt_[n] ? assignment[i] : Dtype(-1);
+      if (assignment[i] < num_gt_[n]) {
+          top_assignments[n * num_pred + i] = assignment[i];
+          top_confidences[n * num_pred + i] = (*(box_flags_data +
+            bottom[2]->offset(n , 0, assignment[i])));
+      } else {
+        top_assignments[n * num_pred + i] = Dtype(-1);
+        top_confidences[n * num_pred + i] = Dtype(0);
+      }
     }
   }
   Dtype batch_size = bottom[0]->num();
